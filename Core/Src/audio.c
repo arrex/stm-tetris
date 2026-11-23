@@ -5,6 +5,8 @@
 #define SAMPLING_FREQ 44101
 // macro for sample cnt
 #define SAMPLE_CNT(pitch_hz) ((SAMPLING_FREQ + (pitch_hz) / 2U) / (pitch_hz))
+// macro to compute arr len
+#define ARR_LEN(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 typedef enum  Pitch_Hz {
     A4_HZ = 440,
@@ -42,8 +44,8 @@ static const Note game_over_chime[] = {
     {A4_HZ, 300},
 };
 
-static void init_pitch_samples(uint16_t pitch_buf[], uint32_t sample_cnt) {
-    for (uint32_t i = 0; i < sample_cnt; i++) {
+static void init_pitch_samples(uint16_t pitch_buf[], int sample_cnt) {
+    for (int i = 0; i < sample_cnt; i++) {
         float phase = (2 * PI) * (i / (float)sample_cnt);
         pitch_buf[i] = (uint16_t)(1365.0f * (arm_sin_f32(phase) + 1.0f));
     }
@@ -71,6 +73,24 @@ static int play_note(const Note *note) {
     HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
 
     return status == HAL_OK ? 0 : -1;
+}
+
+static int play_chime(const struct Note notes[], int notes_cnt) {
+	for (int i = 0; i < notes_cnt; ++i) {
+		if (play_note(&notes[i]) != 0) {
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+int play_tetris_chime(void) {
+	return play_chime(tetris_chime, ARR_LEN(tetris_chime));
+}
+
+int play_game_over_chime(void) {
+	return play_chime(game_over_chime, ARR_LEN(game_over_chime));
 }
 
 void audio_init(void) {
