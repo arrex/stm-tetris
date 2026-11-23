@@ -43,10 +43,34 @@ static const Note game_over_chime[] = {
 };
 
 static void init_pitch_samples(uint16_t pitch_buf[], uint32_t sample_cnt) {
-    for (int i = 0; i < sample_cnt; i++) {
+    for (uint32_t i = 0; i < sample_cnt; i++) {
         float phase = (2 * PI) * (i / (float)sample_cnt);
         pitch_buf[i] = (uint16_t)(1365.0f * (arm_sin_f32(phase) + 1.0f));
     }
+}
+
+static int play_note(const Note *note) {
+	// reject unknown pitch just to be safe
+    uint16_t *samples = samples_for_pitch(note->pitch_hz);
+    if (samples == NULL) {
+        return -1;
+    }
+
+    HAL_StatusTypeDef status = HAL_DAC_Start_DMA(&hdac1, DAC_CHANNEL_1, (uint32_t *)samples, SAMPLE_CNT(note->pitch_hz), DAC_ALIGN_12B_R);
+
+    if (status == HAL_OK) {
+    	status = HAL_TIM_Base_Start(&htim2);
+    }
+
+    if (status == HAL_OK) {
+	   HAL_Delay(note->duration_ms);
+   }
+
+    // stop timer & dma reqs
+    HAL_TIM_Base_Stop(&htim2);
+    HAL_DAC_Stop_DMA(&hdac1, DAC_CHANNEL_1);
+
+    return status == HAL_OK ? 0 : -1;
 }
 
 void audio_init(void) {
