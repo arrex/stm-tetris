@@ -22,6 +22,21 @@ int init_game_state(void)
     return 0;
 }
 
+int update_game_state(void)
+{
+    // work from bottom up so each block moves at most one row per update
+    for (int row = GRID_HEIGHT - 2; row >= 0; --row) {
+        for (int col = 0; col < GRID_WIDTH; ++col) {
+            if (game_state[row][col] && !game_state[row + 1][col]) {
+                game_state[row + 1][col] = game_state[row][col];
+                game_state[row][col] = 0;
+            }
+        }
+    }
+
+    return 0;
+}
+
 int draw_grid(void)
 {
     static const uint8_t clear_screen[] = "\033[2J\033[H";
