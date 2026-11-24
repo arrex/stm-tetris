@@ -408,7 +408,10 @@ void StartDefaultTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-	  osDelay(1000);
+    osDelay(1000);
+    if (update_game_state() == -1) {
+      Error_Handler();
+    }
     if (draw_grid() == -1) {
       Error_Handler();
     }
