@@ -1,5 +1,6 @@
 #include "tetris.h"
 #include "main.h"
+#include <stdbool.h>
 #include <string.h>
 
 // each row contains GRID_WIDTH cells followed by two newline bytes (\r\n)
@@ -8,32 +9,88 @@
 extern UART_HandleTypeDef huart1;
 
 static uint8_t game_state[GRID_HEIGHT][GRID_WIDTH];
+static uint8_t active_piece[GRID_HEIGHT][GRID_WIDTH];
+static bool has_active_piece;
 
 int init_game_state(void)
 {
     memset(game_state, 0, sizeof(game_state));
-
-    const int bar_length = 4;
-    const int bar_start = (GRID_WIDTH - bar_length) / 2;
-    for (int col = bar_start; col < bar_start + bar_length; ++col) {
-        game_state[0][col] = 1;
-    }
+    memset(active_piece, 0, sizeof(active_piece));
+    memset(active_piece[0], 1, sizeof(active_piece[0]));
+    has_active_piece = true;
 
     return 0;
 }
 
-int update_game_state(void)
+static void clear_lines(void)
 {
-    // work from bottom up so each block moves at most one row per update
-    for (int row = GRID_HEIGHT - 2; row >= 0; --row) {
+    int destination = GRID_HEIGHT - 1;
+
+    // only landed blocks are in game state -> any full row can clear
+    for (int row = GRID_HEIGHT - 1; row >= 0; --row) {
+        int full = 1;
         for (int col = 0; col < GRID_WIDTH; ++col) {
-            if (game_state[row][col] && !game_state[row + 1][col]) {
-                game_state[row + 1][col] = game_state[row][col];
-                game_state[row][col] = 0;
+            if (!game_state[row][col]) {
+                full = 0;
+                break;
+            }
+        }
+
+        if (!full) {
+            if (destination != row) {
+                memcpy(game_state[destination], game_state[row], sizeof(game_state[row]));
+            }
+            --destination;
+        }
+    }
+
+    // replace the cleared rows with empty rows at the top.
+    while (destination >= 0) {
+        memset(game_state[destination], 0, sizeof(game_state[destination]));
+        --destination;
+    }
+}
+
+static bool drop_blocks(void)
+{
+    // check the entire active piece before moving any of its cells
+    for (int row = 0; row < GRID_HEIGHT; ++row) {
+        for (int col = 0; col < GRID_WIDTH; ++col) {
+            if (active_piece[row][col]
+                && (row == GRID_HEIGHT - 1 || game_state[row + 1][col])) {
+                return false;
             }
         }
     }
 
+    // move active piece down one row
+    for (int row = GRID_HEIGHT - 1; row > 0; --row) {
+        memcpy(active_piece[row], active_piece[row - 1], sizeof(active_piece[row]));
+    }
+
+    memset(active_piece[0], 0, sizeof(active_piece[0]));
+    return true;
+}
+
+static void lock_piece(void)
+{
+    for (int row = 0; row < GRID_HEIGHT; ++row) {
+        for (int col = 0; col < GRID_WIDTH; ++col) {
+            if (active_piece[row][col]) {
+                game_state[row][col] = active_piece[row][col];
+            }
+        }
+    }
+    memset(active_piece, 0, sizeof(active_piece));
+    has_active_piece = false;
+}
+
+int update_game_state(void)
+{
+    if (has_active_piece && !drop_blocks()) {
+        lock_piece();
+        clear_lines();
+    }
     return 0;
 }
 
@@ -47,7 +104,7 @@ int draw_grid(void)
     for (int row = 0; row < GRID_HEIGHT; ++row) {
     	// populate each row
         for (int col = 0; col < GRID_WIDTH; ++col) {
-            frame[frame_pos++] = game_state[row][col] ? '#' : '.';
+            frame[frame_pos++] = (game_state[row][col] || active_piece[row][col]) ? '#' : '.';
         }
 
         // add newline chars
