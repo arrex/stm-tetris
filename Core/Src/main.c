@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "audio.h"
+#include "tetris.h"
 
 /* USER CODE END Includes */
 
@@ -107,6 +108,9 @@ int main(void)
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   audio_init();
+  if (init_game_state() == -1) {
+     Error_Handler();
+   }
 
   /* USER CODE END 2 */
 
@@ -404,11 +408,10 @@ void StartDefaultTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-    static const uint8_t message[] = "Hello world!\r\n";
-    if (HAL_UART_Transmit(&huart1, message, sizeof(message) - 1U, 100U) != HAL_OK) {
+	  osDelay(1000);
+    if (draw_grid() == -1) {
       Error_Handler();
     }
-    osDelay(1000);
   }
   /* USER CODE END 5 */
 }
