@@ -12,12 +12,23 @@ static uint8_t game_state[GRID_HEIGHT][GRID_WIDTH];
 static uint8_t active_piece[GRID_HEIGHT][GRID_WIDTH];
 static bool has_active_piece;
 
+static void spawn_piece(void)
+{
+    const int piece_length = 4;
+    const int start_col = (GRID_WIDTH - piece_length) / 2;
+
+    memset(active_piece, 0, sizeof(active_piece));
+    for (int col = start_col; col < start_col + piece_length; ++col) {
+        active_piece[0][col] = 1;
+    }
+
+    has_active_piece = true;
+}
+
 int init_game_state(void)
 {
     memset(game_state, 0, sizeof(game_state));
-    memset(active_piece, 0, sizeof(active_piece));
-    memset(active_piece[0], 1, sizeof(active_piece[0]));
-    has_active_piece = true;
+    spawn_piece();
 
     return 0;
 }
@@ -87,9 +98,11 @@ static void lock_piece(void)
 
 int update_game_state(void)
 {
+    // there is an active piece, BUT it cannot move down further
     if (has_active_piece && !drop_blocks()) {
         lock_piece();
         clear_lines();
+        spawn_piece();
     }
     return 0;
 }
