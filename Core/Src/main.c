@@ -34,7 +34,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define INPUT_ROTATE 1U
+#define INPUT_ROTATE 1
+#define DRAW_READY 1
 
 /* USER CODE END PD */
 
@@ -58,6 +59,7 @@ osMessageQId rotateQueueHandle;
 osMessageQId audioQueueHandle;
 osMutexId gameStateMutexHandle;
 /* USER CODE BEGIN PV */
+static GameState game_state;
 
 /* USER CODE END PV */
 
@@ -116,7 +118,7 @@ int main(void)
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   audio_init();
-  if (init_game_state() == -1) {
+  if (init_game_state(&game_state) == -1) {
      Error_Handler();
    }
 
@@ -128,6 +130,9 @@ int main(void)
   gameStateMutexHandle = osMutexCreate(osMutex(gameStateMutex));
 
   /* USER CODE BEGIN RTOS_MUTEX */
+  if (gameStateMutexHandle == NULL) {
+    Error_Handler();
+  }
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
 
@@ -169,6 +174,9 @@ int main(void)
   drawGridTaskHandle = osThreadCreate(osThread(drawGridTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
+  if (gameStateTaskHandle == NULL || playAudioTaskHandle == NULL || drawGridTaskHandle == NULL) {
+    Error_Handler();
+  }
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
 
@@ -463,11 +471,15 @@ void StartGameStateTask(void const * argument)
   {
     osDelay(10);
 
-    // Apply queued input in this task so interrupts never modify the board.
+    if (osMutexWait(gameStateMutexHandle, osWaitForever) != osOK) {
+      Error_Handler();
+    }
+
+    // apply queued input in this task so interrupts never modify the board
     osEvent event = osMessageGet(rotateQueueHandle, 0);
     while (event.status == osEventMessage) {
       if (event.value.v == INPUT_ROTATE) {
-        if (rotate_piece() == -1) {
+        if (rotate_piece(&game_state) == -1) {
           Error_Handler();
         }
         redraw = 1;
@@ -475,18 +487,23 @@ void StartGameStateTask(void const * argument)
       event = osMessageGet(rotateQueueHandle, 0);
     }
 
-    // Falling keeps its own one-second interval, independent of button presses.
+    // falling keeps its own one-second interval (independent of btn presses)
     uint32_t now = HAL_GetTick();
     if ((uint32_t)(now - last_update_ms) >= 1000U) {
       last_update_ms = now;
-      if (update_game_state() == -1) {
+      if (update_game_state(&game_state) == -1) {
         Error_Handler();
       }
       redraw = 1;
     }
 
+    if (osMutexRelease(gameStateMutexHandle) != osOK) {
+      Error_Handler();
+    }
+
     if (redraw) {
-      if (draw_grid() == -1) {
+      // notify after unlocking -> repeated signals coalesce into one redraw
+      if (osSignalSet(drawGridTaskHandle, DRAW_READY) < 0) {
         Error_Handler();
       }
       redraw = 0;
@@ -523,10 +540,26 @@ void StartPlayAudioTask(void const * argument)
 void StartDrawGridTask(void const * argument)
 {
   /* USER CODE BEGIN StartDrawGridTask */
-  /* Infinite loop */
+  // Keep the full snapshot off this task's small stack.
+  static GameState snapshot;
+
   for(;;)
   {
-    osDelay(1);
+    osEvent event = osSignalWait(DRAW_READY, osWaitForever);
+    if (event.status != osEventSignal) {
+      Error_Handler();
+    }
+    if (osMutexWait(gameStateMutexHandle, osWaitForever) != osOK) {
+      Error_Handler();
+    }
+    snapshot = game_state;
+    if (osMutexRelease(gameStateMutexHandle) != osOK) {
+      Error_Handler();
+    }
+
+    if (draw_grid(&snapshot) == -1) {
+      Error_Handler();
+    }
   }
   /* USER CODE END StartDrawGridTask */
 }
