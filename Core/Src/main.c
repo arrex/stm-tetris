@@ -117,8 +117,10 @@ int main(void)
   MX_TIM2_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  audio_init();
-  if (init_game_state(&game_state) == -1) {
+  if (audio_init() != 0) {
+      Error_Handler();
+  }
+  if (init_game_state(&game_state) != 0) {
      Error_Handler();
    }
 
