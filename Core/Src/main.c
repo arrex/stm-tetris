@@ -34,6 +34,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define INPUT_ROTATE 1U
 
 /* USER CODE END PD */
 
@@ -133,6 +134,9 @@ int main(void)
   rotateQueueHandle = osMessageCreate(osMessageQ(rotateQueue), NULL);
 
   /* USER CODE BEGIN RTOS_QUEUES */
+  if (rotateQueueHandle == NULL) {
+    Error_Handler();
+  }
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
 
@@ -398,6 +402,23 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  static uint32_t last_press_ms = 0;
+  static uint8_t button_seen = 0;
+
+  if (GPIO_Pin != BTN_Pin || rotateQueueHandle == NULL || !osKernelRunning()) {
+    return;
+  }
+
+  uint32_t now = HAL_GetTick();
+  if (!button_seen || (uint32_t)(now - last_press_ms) >= 50U) {
+    last_press_ms = now;
+    button_seen = 1;
+    // ISR-safe, nonblocking: ignore the press if the queue is full.
+    (void)osMessagePut(rotateQueueHandle, INPUT_ROTATE, 0);
+  }
+}
 
 /* USER CODE END 4 */
 
@@ -411,15 +432,41 @@ static void MX_GPIO_Init(void)
 void StartDefaultTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
+  uint32_t last_update_ms = HAL_GetTick();
+  uint8_t redraw = 1;
+
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1000);
-    if (update_game_state() == -1) {
-      Error_Handler();
+    osDelay(10);
+
+    // Apply queued input in this task so interrupts never modify the board.
+    osEvent event = osMessageGet(rotateQueueHandle, 0);
+    while (event.status == osEventMessage) {
+      if (event.value.v == INPUT_ROTATE) {
+        if (rotate_piece() == -1) {
+          Error_Handler();
+        }
+        redraw = 1;
+      }
+      event = osMessageGet(rotateQueueHandle, 0);
     }
-    if (draw_grid() == -1) {
-      Error_Handler();
+
+    // Falling keeps its own one-second interval, independent of button presses.
+    uint32_t now = HAL_GetTick();
+    if ((uint32_t)(now - last_update_ms) >= 1000U) {
+      last_update_ms = now;
+      if (update_game_state() == -1) {
+        Error_Handler();
+      }
+      redraw = 1;
+    }
+
+    if (redraw) {
+      if (draw_grid() == -1) {
+        Error_Handler();
+      }
+      redraw = 0;
     }
   }
   /* USER CODE END 5 */
