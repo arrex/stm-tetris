@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "audio.h"
+#include "stm32l4s5i_iot01_accelero.h"
 #include "tetris.h"
 
 /* USER CODE END Includes */
@@ -36,8 +37,8 @@
 /* USER CODE BEGIN PD */
 #define INPUT_ROTATE 1
 #define DRAW_READY 1
-#define AUDIO_LINE_CLEAR (1U << 0)
-#define AUDIO_GAME_OVER (1U << 1)
+#define AUDIO_LINE_CLEAR 1
+#define AUDIO_GAME_OVER 2
 
 /* USER CODE END PD */
 
@@ -123,6 +124,9 @@ int main(void)
   MX_USART1_UART_Init();
   MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
+  if (BSP_ACCELERO_Init() != ACCELERO_OK) {
+    Error_Handler();
+  }
   if (audio_init() != 0) {
       Error_Handler();
   }
