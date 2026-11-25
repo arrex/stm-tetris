@@ -86,6 +86,10 @@ osMessageQId inputQueueHandle;
 osMessageQId audioQueueHandle;
 osMutexId gameStateMutexHandle;
 /* USER CODE BEGIN PV */
+static const uint32_t GAME_TICK_MS = 1000U;
+static const uint32_t GAME_TICK_MIN_MS = 200U;
+static const uint32_t GAME_TICK_STEP_MS = 100U;
+static const uint32_t SCORE_PER_SPEEDUP = 1000U;
 static GameState game_state;
 
 /* USER CODE END PV */
@@ -600,9 +604,13 @@ void StartGameStateTask(void const * argument)
       event = osMessageGet(inputQueueHandle, 0);
     }
 
-    // falling keeps its own one-second interval (independent of btn presses)
+    // speed up game tick w score
+    // clamp at min of 200 ms
+    const uint32_t speedup_ms = (game_state.score / SCORE_PER_SPEEDUP) * GAME_TICK_STEP_MS;
+    const uint32_t tick_ms = speedup_ms >= GAME_TICK_MS - GAME_TICK_MIN_MS
+        ? GAME_TICK_MIN_MS : GAME_TICK_MS - speedup_ms;
     uint32_t now = HAL_GetTick();
-    if ((uint32_t)(now - last_update_ms) >= 1000U) {
+    if ((uint32_t)(now - last_update_ms) >= tick_ms) {
       last_update_ms = now;
       if (update_game_state(&game_state) == -1) {
         Error_Handler();
