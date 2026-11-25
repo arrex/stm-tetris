@@ -51,7 +51,9 @@ TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart1;
 
-osThreadId defaultTaskHandle;
+osThreadId gameStateTaskHandle;
+osThreadId playAudioTaskHandle;
+osThreadId drawGridTaskHandle;
 osMessageQId rotateQueueHandle;
 /* USER CODE BEGIN PV */
 
@@ -64,7 +66,9 @@ static void MX_DMA_Init(void);
 static void MX_DAC1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
-void StartDefaultTask(void const * argument);
+void StartGameStateTask(void const * argument);
+void StartPlayAudioTask(void const * argument);
+void StartDrawGridTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -141,9 +145,17 @@ int main(void)
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
-  defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+  /* definition and creation of gameStateTask */
+  osThreadDef(gameStateTask, StartGameStateTask, osPriorityAboveNormal, 0, 128);
+  gameStateTaskHandle = osThreadCreate(osThread(gameStateTask), NULL);
+
+  /* definition and creation of playAudioTask */
+  osThreadDef(playAudioTask, StartPlayAudioTask, osPriorityBelowNormal, 0, 128);
+  playAudioTaskHandle = osThreadCreate(osThread(playAudioTask), NULL);
+
+  /* definition and creation of drawGridTask */
+  osThreadDef(drawGridTask, StartDrawGridTask, osPriorityNormal, 0, 128);
+  drawGridTaskHandle = osThreadCreate(osThread(drawGridTask), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -422,14 +434,14 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_StartDefaultTask */
+/* USER CODE BEGIN Header_StartGameStateTask */
 /**
-  * @brief  Function implementing the defaultTask thread.
+  * @brief  Function implementing the gameStateTask thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void const * argument)
+/* USER CODE END Header_StartGameStateTask */
+void StartGameStateTask(void const * argument)
 {
   /* USER CODE BEGIN 5 */
   uint32_t last_update_ms = HAL_GetTick();
@@ -470,6 +482,42 @@ void StartDefaultTask(void const * argument)
     }
   }
   /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_StartPlayAudioTask */
+/**
+* @brief Function implementing the playAudioTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartPlayAudioTask */
+void StartPlayAudioTask(void const * argument)
+{
+  /* USER CODE BEGIN StartPlayAudioTask */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END StartPlayAudioTask */
+}
+
+/* USER CODE BEGIN Header_StartDrawGridTask */
+/**
+* @brief Function implementing the drawGridTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartDrawGridTask */
+void StartDrawGridTask(void const * argument)
+{
+  /* USER CODE BEGIN StartDrawGridTask */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END StartDrawGridTask */
 }
 
 /**
