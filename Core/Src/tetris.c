@@ -1,6 +1,7 @@
 #include "tetris.h"
 #include "main.h"
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -10,6 +11,8 @@
 #define PIECE_COUNT 7
 #define PIECE_WIDTH 4
 #define PIECE_HEIGHT 4
+
+static const uint32_t line_clear_points[5] = {0, 100, 300, 500, 800};
 
 static const uint8_t tetrominoes[PIECE_COUNT][PIECE_WIDTH * PIECE_HEIGHT] = {
     {0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0}, // I
@@ -244,7 +247,11 @@ int update_game_state(GameState *state)
     // there is an active piece, BUT it cannot move down further
     if (state->has_active_piece && !drop_blocks(state)) {
         lock_piece(state);
-        state->lines_cleared += clear_lines(state);
+        const int cleared = clear_lines(state);
+        state->lines_cleared += cleared;
+        if (cleared >= 1 && cleared <= 4) {
+            state->score += line_clear_points[cleared];
+        }
         spawn_piece(state);
     }
 
@@ -275,6 +282,14 @@ int draw_grid(const GameState *state)
     // clear terminal, then send the grid
     if (HAL_UART_Transmit(&huart1, clear_screen, sizeof(clear_screen) - 1U, 100U) != HAL_OK
         || HAL_UART_Transmit(&huart1, frame, sizeof(frame), 100U) != HAL_OK) {
+        return -1;
+    }
+
+    static char score_line[32];
+    const int score_length = snprintf(score_line, sizeof(score_line), "Score: %lu\r\n",
+                                      (unsigned long)state->score);
+    if (score_length < 0 || score_length >= (int)sizeof(score_line)
+        || HAL_UART_Transmit(&huart1, (uint8_t *)score_line, (uint16_t)score_length, 100U) != HAL_OK) {
         return -1;
     }
 
