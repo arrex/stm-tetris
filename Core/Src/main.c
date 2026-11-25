@@ -30,6 +30,11 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+typedef struct {
+  uint32_t held_move;
+  uint32_t last_move_ms;
+  uint32_t repeat_delay_ms;
+} TiltRepeat;
 
 /* USER CODE END PTD */
 
@@ -38,12 +43,16 @@
 #define INPUT_ROTATE 1
 #define INPUT_LEFT 2
 #define INPUT_RIGHT 3
+#define INPUT_DOWN 4
 
 #define ACCELERO_POLL_MS 200
 #define ACCELERO_CALIBRATION_SAMPLES 10
 // X is lateral; change the axis or sign to match the board's held orientation.
 #define ACCELERO_LATERAL_AXIS 0
 #define ACCELERO_AXIS_SIGN 1
+// Y is perpendicular to lateral X; negative tilt requests soft drop.
+#define ACCELERO_DROP_AXIS 1
+#define ACCELERO_DROP_SIGN -1
 #define ACCELERO_DEAD_ZONE_MG 150
 #define ACCELERO_RELEASE_ZONE_MG 100
 #define INPUT_INITIAL_REPEAT_MS 1000
@@ -100,6 +109,21 @@ void StartPollAcceleroTask(void const * argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+static void queue_tilt_move(TiltRepeat *repeat, uint32_t move, uint32_t now)
+{
+  if (move != repeat->held_move) {
+    repeat->held_move = move;
+    repeat->repeat_delay_ms = INPUT_INITIAL_REPEAT_MS;
+    repeat->last_move_ms = now;
+    if (move) {
+      (void)osMessagePut(inputQueueHandle, move, 0);
+    }
+  } else if (move && (uint32_t)(now - repeat->last_move_ms) >= repeat->repeat_delay_ms) {
+    (void)osMessagePut(inputQueueHandle, move, 0);
+    repeat->last_move_ms = now;
+    repeat->repeat_delay_ms = INPUT_REPEAT_MS;
+  }
+}
 
 /* USER CODE END 0 */
 
@@ -555,6 +579,9 @@ void StartGameStateTask(void const * argument)
       Error_Handler();
     }
 
+    const uint32_t previous_lines = game_state.lines_cleared;
+    const bool was_game_over = game_state.game_over;
+
     // apply queued input in this task so interrupts never modify the board
     osEvent event = osMessageGet(inputQueueHandle, 0);
     while (event.status == osEventMessage) {
@@ -563,6 +590,7 @@ void StartGameStateTask(void const * argument)
         case INPUT_ROTATE: status = rotate_piece(&game_state); break;
         case INPUT_LEFT: status = move_piece(&game_state, -1); break;
         case INPUT_RIGHT: status = move_piece(&game_state, 1); break;
+        case INPUT_DOWN: status = update_game_state(&game_state); break;
         default: break;
       }
       if (status == -1) {
@@ -576,18 +604,18 @@ void StartGameStateTask(void const * argument)
     uint32_t now = HAL_GetTick();
     if ((uint32_t)(now - last_update_ms) >= 1000U) {
       last_update_ms = now;
-      const uint32_t previous_lines = game_state.lines_cleared;
-      const bool was_game_over = game_state.game_over;
       if (update_game_state(&game_state) == -1) {
         Error_Handler();
       }
-      if (game_state.lines_cleared != previous_lines) {
-        pending_audio |= AUDIO_LINE_CLEAR;
-      }
-      if (!was_game_over && game_state.game_over) {
-        pending_audio |= AUDIO_GAME_OVER;
-      }
       redraw = 1;
+    }
+
+    // both gravity and queued soft drops can lock pieces and trigger audio.
+    if (game_state.lines_cleared != previous_lines) {
+      pending_audio |= AUDIO_LINE_CLEAR;
+    }
+    if (!was_game_over && game_state.game_over) {
+      pending_audio |= AUDIO_GAME_OVER;
     }
 
     if (osMutexRelease(gameStateMutexHandle) != osOK) {
@@ -682,7 +710,7 @@ void StartPollAcceleroTask(void const * argument)
   /* USER CODE BEGIN StartPollAcceleroTask */
   uint32_t last = osKernelSysTick();
   int16_t accel[3];
-  int32_t neutral_sum = 0;
+  int32_t neutral_sum[2] = {0};
 
   // Hold the board still in its neutral position during startup calibration.
   for (int sample = 0; sample < ACCELERO_CALIBRATION_SAMPLES; ++sample) {
@@ -690,12 +718,13 @@ void StartPollAcceleroTask(void const * argument)
       Error_Handler();
     }
     BSP_ACCELERO_AccGetXYZ(accel);
-    neutral_sum += accel[ACCELERO_LATERAL_AXIS];
+    neutral_sum[0] += accel[ACCELERO_LATERAL_AXIS];
+    neutral_sum[1] += accel[ACCELERO_DROP_AXIS];
   }
-  const int32_t neutral = neutral_sum / ACCELERO_CALIBRATION_SAMPLES;
-  uint32_t held_move = 0;
-  uint32_t last_move_ms = 0;
-  uint32_t repeat_delay_ms = INPUT_INITIAL_REPEAT_MS;
+  const int32_t lateral_neutral = neutral_sum[0] / ACCELERO_CALIBRATION_SAMPLES;
+  const int32_t drop_neutral = neutral_sum[1] / ACCELERO_CALIBRATION_SAMPLES;
+  TiltRepeat lateral_repeat = {0};
+  TiltRepeat drop_repeat = {0};
 
   for(;;)
   {
@@ -703,32 +732,29 @@ void StartPollAcceleroTask(void const * argument)
       Error_Handler();
     }
     BSP_ACCELERO_AccGetXYZ(accel);
-    const int32_t tilt = ACCELERO_AXIS_SIGN * (accel[ACCELERO_LATERAL_AXIS] - neutral);
+    const int32_t tilt = ACCELERO_AXIS_SIGN * (accel[ACCELERO_LATERAL_AXIS] - lateral_neutral);
+    const int32_t drop_tilt = ACCELERO_DROP_SIGN * (accel[ACCELERO_DROP_AXIS] - drop_neutral);
 
     uint32_t move = 0;
     if (tilt <= -ACCELERO_DEAD_ZONE_MG) {
       move = INPUT_LEFT;
     } else if (tilt >= ACCELERO_DEAD_ZONE_MG) {
       move = INPUT_RIGHT;
-    } else if (held_move == INPUT_LEFT && tilt < -ACCELERO_RELEASE_ZONE_MG) {
+    } else if (lateral_repeat.held_move == INPUT_LEFT && tilt < -ACCELERO_RELEASE_ZONE_MG) {
       move = INPUT_LEFT;
-    } else if (held_move == INPUT_RIGHT && tilt > ACCELERO_RELEASE_ZONE_MG) {
+    } else if (lateral_repeat.held_move == INPUT_RIGHT && tilt > ACCELERO_RELEASE_ZONE_MG) {
       move = INPUT_RIGHT;
     }
 
-    uint32_t now = HAL_GetTick();
-    if (move != held_move) {
-      held_move = move;
-      repeat_delay_ms = INPUT_INITIAL_REPEAT_MS;
-      last_move_ms = now;
-      if (move) {
-        (void)osMessagePut(inputQueueHandle, move, 0);
-      }
-    } else if (move && (uint32_t)(now - last_move_ms) >= repeat_delay_ms) {
-      (void)osMessagePut(inputQueueHandle, move, 0);
-      last_move_ms = now;
-      repeat_delay_ms = INPUT_REPEAT_MS;
+    uint32_t drop_move = 0;
+    if (drop_tilt >= ACCELERO_DEAD_ZONE_MG
+        || (drop_repeat.held_move == INPUT_DOWN && drop_tilt > ACCELERO_RELEASE_ZONE_MG)) {
+      drop_move = INPUT_DOWN;
     }
+
+    uint32_t now = HAL_GetTick();
+    queue_tilt_move(&lateral_repeat, move, now);
+    queue_tilt_move(&drop_repeat, drop_move, now);
   }
   /* USER CODE END StartPollAcceleroTask */
 }
