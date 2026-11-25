@@ -58,8 +58,6 @@ typedef struct {
 #define INPUT_INITIAL_REPEAT_MS 1000
 #define INPUT_REPEAT_MS 750
 #define DRAW_READY 1
-#define AUDIO_LINE_CLEAR 1
-#define AUDIO_GAME_OVER 2
 
 /* USER CODE END PD */
 
@@ -572,7 +570,7 @@ void StartGameStateTask(void const * argument)
   /* USER CODE BEGIN 5 */
   uint32_t last_update_ms = HAL_GetTick();
   uint8_t redraw = 1;
-  uint32_t pending_audio = 0;
+  uint32_t pending_audio = AUDIO_START;
 
   /* Infinite loop */
   for(;;)
@@ -597,7 +595,7 @@ void StartGameStateTask(void const * argument)
             last_update_ms = HAL_GetTick();
             previous_lines = game_state.lines_cleared;
             was_game_over = game_state.game_over;
-            pending_audio = 0;
+            pending_audio = AUDIO_START;
           } else {
             status = rotate_piece(&game_state);
           }
@@ -668,14 +666,29 @@ void StartPlayAudioTask(void const * argument)
   /* USER CODE BEGIN StartPlayAudioTask */
   for(;;)
   {
-    osEvent event = osMessageGet(audioQueueHandle, osWaitForever);
-    if (event.status != osEventMessage) {
+    uint32_t wait_ms = audio_wait_ms(HAL_GetTick());
+    osEvent event = osMessageGet(audioQueueHandle, wait_ms);
+    uint32_t events = 0;
+
+    // drain in order -> restart discards older sounds & keeps newer events
+    while (event.status == osEventMessage) {
+      if (event.value.v & AUDIO_START) {
+        events = event.value.v;
+      } else {
+        events |= event.value.v;
+      }
+      event = osMessageGet(audioQueueHandle, 0);
+    }
+
+    if (event.status != osOK && event.status != osEventTimeout) {
       Error_Handler();
     }
-    if ((event.value.v & AUDIO_LINE_CLEAR) && play_tetris_chime() != 0) {
+
+    if (events && audio_handle_event(events, HAL_GetTick()) != 0) {
       Error_Handler();
     }
-    if ((event.value.v & AUDIO_GAME_OVER) && play_game_over_chime() != 0) {
+
+    if (audio_update(HAL_GetTick()) != 0) {
       Error_Handler();
     }
   }
