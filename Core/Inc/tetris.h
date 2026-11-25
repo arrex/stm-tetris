@@ -10,6 +10,7 @@
 typedef struct {
     uint8_t board[GRID_HEIGHT][GRID_WIDTH];
     uint8_t active_piece[GRID_HEIGHT][GRID_WIDTH];
+    uint32_t lines_cleared;
     bool has_active_piece;
     bool game_over;
 } GameState;
