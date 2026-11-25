@@ -40,7 +40,7 @@ typedef struct {
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define INPUT_ROTATE 1
+#define INPUT_BUTTON 1
 #define INPUT_LEFT 2
 #define INPUT_RIGHT 3
 #define INPUT_DOWN 4
@@ -554,7 +554,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     last_press_ms = now;
     button_seen = 1;
     // ISR-safe, nonblocking: ignore the press if the queue is full.
-    (void)osMessagePut(inputQueueHandle, INPUT_ROTATE, 0);
+    (void)osMessagePut(inputQueueHandle, INPUT_BUTTON, 0);
   }
 }
 
@@ -583,15 +583,25 @@ void StartGameStateTask(void const * argument)
       Error_Handler();
     }
 
-    const uint32_t previous_lines = game_state.lines_cleared;
-    const bool was_game_over = game_state.game_over;
+    uint32_t previous_lines = game_state.lines_cleared;
+    bool was_game_over = game_state.game_over;
 
     // apply queued input in this task so interrupts never modify the board
     osEvent event = osMessageGet(inputQueueHandle, 0);
     while (event.status == osEventMessage) {
       int status = 0;
       switch (event.value.v) {
-        case INPUT_ROTATE: status = rotate_piece(&game_state); break;
+        case INPUT_BUTTON:
+          if (game_state.game_over) {
+            status = init_game_state(&game_state);
+            last_update_ms = HAL_GetTick();
+            previous_lines = game_state.lines_cleared;
+            was_game_over = game_state.game_over;
+            pending_audio = 0;
+          } else {
+            status = rotate_piece(&game_state);
+          }
+          break;
         case INPUT_LEFT: status = move_piece(&game_state, -1); break;
         case INPUT_RIGHT: status = move_piece(&game_state, 1); break;
         case INPUT_DOWN: status = update_game_state(&game_state); break;
