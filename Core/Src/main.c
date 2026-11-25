@@ -36,6 +36,18 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define INPUT_ROTATE 1
+#define INPUT_LEFT 2
+#define INPUT_RIGHT 3
+
+#define ACCELERO_POLL_MS 200
+#define ACCELERO_CALIBRATION_SAMPLES 10
+// X is lateral; change the axis or sign to match the board's held orientation.
+#define ACCELERO_LATERAL_AXIS 0
+#define ACCELERO_AXIS_SIGN 1
+#define ACCELERO_DEAD_ZONE_MG 150
+#define ACCELERO_RELEASE_ZONE_MG 100
+#define INPUT_INITIAL_REPEAT_MS 1000
+#define INPUT_REPEAT_MS 750
 #define DRAW_READY 1
 #define AUDIO_LINE_CLEAR 1
 #define AUDIO_GAME_OVER 2
@@ -192,7 +204,8 @@ int main(void)
   pollAcceleroTasHandle = osThreadCreate(osThread(pollAcceleroTas), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
-  if (gameStateTaskHandle == NULL || playAudioTaskHandle == NULL || drawGridTaskHandle == NULL) {
+  if (gameStateTaskHandle == NULL || playAudioTaskHandle == NULL
+      || drawGridTaskHandle == NULL || pollAcceleroTasHandle == NULL) {
     Error_Handler();
   }
   /* add threads, ... */
@@ -545,12 +558,17 @@ void StartGameStateTask(void const * argument)
     // apply queued input in this task so interrupts never modify the board
     osEvent event = osMessageGet(inputQueueHandle, 0);
     while (event.status == osEventMessage) {
-      if (event.value.v == INPUT_ROTATE) {
-        if (rotate_piece(&game_state) == -1) {
-          Error_Handler();
-        }
-        redraw = 1;
+      int status = 0;
+      switch (event.value.v) {
+        case INPUT_ROTATE: status = rotate_piece(&game_state); break;
+        case INPUT_LEFT: status = move_piece(&game_state, -1); break;
+        case INPUT_RIGHT: status = move_piece(&game_state, 1); break;
+        default: break;
       }
+      if (status == -1) {
+        Error_Handler();
+      }
+      redraw = 1;
       event = osMessageGet(inputQueueHandle, 0);
     }
 
@@ -662,10 +680,55 @@ void StartDrawGridTask(void const * argument)
 void StartPollAcceleroTask(void const * argument)
 {
   /* USER CODE BEGIN StartPollAcceleroTask */
-  /* Infinite loop */
+  uint32_t last = osKernelSysTick();
+  int16_t accel[3];
+  int32_t neutral_sum = 0;
+
+  // Hold the board still in its neutral position during startup calibration.
+  for (int sample = 0; sample < ACCELERO_CALIBRATION_SAMPLES; ++sample) {
+    if (osDelayUntil(&last, ACCELERO_POLL_MS) != osOK) {
+      Error_Handler();
+    }
+    BSP_ACCELERO_AccGetXYZ(accel);
+    neutral_sum += accel[ACCELERO_LATERAL_AXIS];
+  }
+  const int32_t neutral = neutral_sum / ACCELERO_CALIBRATION_SAMPLES;
+  uint32_t held_move = 0;
+  uint32_t last_move_ms = 0;
+  uint32_t repeat_delay_ms = INPUT_INITIAL_REPEAT_MS;
+
   for(;;)
   {
-    osDelay(1);
+    if (osDelayUntil(&last, ACCELERO_POLL_MS) != osOK) {
+      Error_Handler();
+    }
+    BSP_ACCELERO_AccGetXYZ(accel);
+    const int32_t tilt = ACCELERO_AXIS_SIGN * (accel[ACCELERO_LATERAL_AXIS] - neutral);
+
+    uint32_t move = 0;
+    if (tilt <= -ACCELERO_DEAD_ZONE_MG) {
+      move = INPUT_LEFT;
+    } else if (tilt >= ACCELERO_DEAD_ZONE_MG) {
+      move = INPUT_RIGHT;
+    } else if (held_move == INPUT_LEFT && tilt < -ACCELERO_RELEASE_ZONE_MG) {
+      move = INPUT_LEFT;
+    } else if (held_move == INPUT_RIGHT && tilt > ACCELERO_RELEASE_ZONE_MG) {
+      move = INPUT_RIGHT;
+    }
+
+    uint32_t now = HAL_GetTick();
+    if (move != held_move) {
+      held_move = move;
+      repeat_delay_ms = INPUT_INITIAL_REPEAT_MS;
+      last_move_ms = now;
+      if (move) {
+        (void)osMessagePut(inputQueueHandle, move, 0);
+      }
+    } else if (move && (uint32_t)(now - last_move_ms) >= repeat_delay_ms) {
+      (void)osMessagePut(inputQueueHandle, move, 0);
+      last_move_ms = now;
+      repeat_delay_ms = INPUT_REPEAT_MS;
+    }
   }
   /* USER CODE END StartPollAcceleroTask */
 }
