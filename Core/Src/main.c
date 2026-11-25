@@ -60,7 +60,8 @@ UART_HandleTypeDef huart1;
 osThreadId gameStateTaskHandle;
 osThreadId playAudioTaskHandle;
 osThreadId drawGridTaskHandle;
-osMessageQId rotateQueueHandle;
+osThreadId pollAcceleroTasHandle;
+osMessageQId inputQueueHandle;
 osMessageQId audioQueueHandle;
 osMutexId gameStateMutexHandle;
 /* USER CODE BEGIN PV */
@@ -79,6 +80,7 @@ static void MX_I2C2_Init(void);
 void StartGameStateTask(void const * argument);
 void StartPlayAudioTask(void const * argument);
 void StartDrawGridTask(void const * argument);
+void StartPollAcceleroTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -157,16 +159,16 @@ int main(void)
   /* USER CODE END RTOS_TIMERS */
 
   /* Create the queue(s) */
-  /* definition and creation of rotateQueue */
-  osMessageQDef(rotateQueue, 8, uint32_t);
-  rotateQueueHandle = osMessageCreate(osMessageQ(rotateQueue), NULL);
+  /* definition and creation of inputQueue */
+  osMessageQDef(inputQueue, 16, uint32_t);
+  inputQueueHandle = osMessageCreate(osMessageQ(inputQueue), NULL);
 
   /* definition and creation of audioQueue */
   osMessageQDef(audioQueue, 8, uint32_t);
   audioQueueHandle = osMessageCreate(osMessageQ(audioQueue), NULL);
 
   /* USER CODE BEGIN RTOS_QUEUES */
-  if (rotateQueueHandle == NULL || audioQueueHandle == NULL) {
+  if (inputQueueHandle == NULL || audioQueueHandle == NULL) {
     Error_Handler();
   }
   /* add queues, ... */
@@ -184,6 +186,10 @@ int main(void)
   /* definition and creation of drawGridTask */
   osThreadDef(drawGridTask, StartDrawGridTask, osPriorityNormal, 0, 128);
   drawGridTaskHandle = osThreadCreate(osThread(drawGridTask), NULL);
+
+  /* definition and creation of pollAcceleroTas */
+  osThreadDef(pollAcceleroTas, StartPollAcceleroTask, osPriorityNormal, 0, 128);
+  pollAcceleroTasHandle = osThreadCreate(osThread(pollAcceleroTas), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   if (gameStateTaskHandle == NULL || playAudioTaskHandle == NULL || drawGridTaskHandle == NULL) {
@@ -498,7 +504,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   static uint32_t last_press_ms = 0;
   static uint8_t button_seen = 0;
 
-  if (GPIO_Pin != BTN_Pin || rotateQueueHandle == NULL || !osKernelRunning()) {
+  if (GPIO_Pin != BTN_Pin || inputQueueHandle == NULL || !osKernelRunning()) {
     return;
   }
 
@@ -507,7 +513,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     last_press_ms = now;
     button_seen = 1;
     // ISR-safe, nonblocking: ignore the press if the queue is full.
-    (void)osMessagePut(rotateQueueHandle, INPUT_ROTATE, 0);
+    (void)osMessagePut(inputQueueHandle, INPUT_ROTATE, 0);
   }
 }
 
@@ -537,7 +543,7 @@ void StartGameStateTask(void const * argument)
     }
 
     // apply queued input in this task so interrupts never modify the board
-    osEvent event = osMessageGet(rotateQueueHandle, 0);
+    osEvent event = osMessageGet(inputQueueHandle, 0);
     while (event.status == osEventMessage) {
       if (event.value.v == INPUT_ROTATE) {
         if (rotate_piece(&game_state) == -1) {
@@ -545,7 +551,7 @@ void StartGameStateTask(void const * argument)
         }
         redraw = 1;
       }
-      event = osMessageGet(rotateQueueHandle, 0);
+      event = osMessageGet(inputQueueHandle, 0);
     }
 
     // falling keeps its own one-second interval (independent of btn presses)
@@ -644,6 +650,24 @@ void StartDrawGridTask(void const * argument)
     }
   }
   /* USER CODE END StartDrawGridTask */
+}
+
+/* USER CODE BEGIN Header_StartPollAcceleroTask */
+/**
+* @brief Function implementing the pollAcceleroTas thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartPollAcceleroTask */
+void StartPollAcceleroTask(void const * argument)
+{
+  /* USER CODE BEGIN StartPollAcceleroTask */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END StartPollAcceleroTask */
 }
 
 /**
