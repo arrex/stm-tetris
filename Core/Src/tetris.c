@@ -26,17 +26,37 @@ extern UART_HandleTypeDef huart1;
 static uint8_t game_state[GRID_HEIGHT][GRID_WIDTH];
 static uint8_t active_piece[GRID_HEIGHT][GRID_WIDTH];
 static bool has_active_piece;
+static bool game_over;
 
 static void spawn_piece(void)
 {
     const int piece = rand() % PIECE_COUNT;
     const int start_col = (GRID_WIDTH - PIECE_WIDTH) / 2;
 
-    memset(active_piece, 0, sizeof(active_piece));
+    // Skip empty rows above the shape so it spawns at the top of the board.
+    int first_occupied_row = 0;
+    for (int cell = 0; cell < PIECE_WIDTH * PIECE_HEIGHT; ++cell) {
+        if (tetrominoes[piece][cell]) {
+            first_occupied_row = cell / PIECE_WIDTH;
+            break;
+        }
+    }
 
-    for (int row = 0; row < PIECE_HEIGHT; ++row) {
+    memset(active_piece, 0, sizeof(active_piece));
+    has_active_piece = false;
+
+    for (int row = first_occupied_row; row < PIECE_HEIGHT; ++row) {
+        const int board_row = row - first_occupied_row;
         for (int col = 0; col < PIECE_WIDTH; ++col) {
-            active_piece[row][start_col + col] = tetrominoes[piece][row * PIECE_WIDTH + col];
+            active_piece[board_row][start_col + col] = tetrominoes[piece][row * PIECE_WIDTH + col];
+
+            if (active_piece[board_row][start_col + col] && game_state[board_row][start_col + col]) {
+                // discard the blocked spawn and preserve the landed board
+                memset(active_piece, 0, sizeof(active_piece));
+                game_over = true;
+
+                return;
+            }
         }
     }
 
@@ -46,6 +66,7 @@ static void spawn_piece(void)
 int init_game_state(void)
 {
     memset(game_state, 0, sizeof(game_state));
+    game_over = false;
     spawn_piece();
 
     return 0;
@@ -116,12 +137,18 @@ static void lock_piece(void)
 
 int update_game_state(void)
 {
+    if (game_over) {
+        // return special err code for game over
+        return 99;
+    }
+
     // there is an active piece, BUT it cannot move down further
     if (has_active_piece && !drop_blocks()) {
         lock_piece();
         clear_lines();
         spawn_piece();
     }
+
     return 0;
 }
 
@@ -147,6 +174,13 @@ int draw_grid(void)
     if (HAL_UART_Transmit(&huart1, clear_screen, sizeof(clear_screen) - 1U, 100U) != HAL_OK
         || HAL_UART_Transmit(&huart1, frame, sizeof(frame), 100U) != HAL_OK) {
         return -1;
+    }
+
+    if (game_over) {
+        static const uint8_t message[] = "Game over!\r\n";
+        if (HAL_UART_Transmit(&huart1, message, sizeof(message) - 1U, 100U) != HAL_OK) {
+            return -1;
+        }
     }
 
     return 0;
