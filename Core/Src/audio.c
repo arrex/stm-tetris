@@ -107,10 +107,12 @@ int play_game_over_chime(void) {
 	return play_chime(game_over_chime, ARR_LEN(game_over_chime));
 }
 
-void audio_init(void) {
+int audio_init(void) {
     init_pitch_samples(a5_samples, SAMPLE_CNT(A5_HZ));
     init_pitch_samples(c6_samples, SAMPLE_CNT(C6_HZ));
     init_pitch_samples(e6_samples, SAMPLE_CNT(E6_HZ));
     init_pitch_samples(g6_samples, SAMPLE_CNT(G6_HZ));
     init_pitch_samples(c7_samples, SAMPLE_CNT(C7_HZ));
+
+    return 0;
 }
