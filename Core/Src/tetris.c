@@ -1,10 +1,25 @@
 #include "tetris.h"
 #include "main.h"
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 
 // each row contains GRID_WIDTH cells followed by two newline bytes (\r\n)
 #define ROW_LENGTH (GRID_WIDTH + 2)
+
+#define PIECE_COUNT 7
+#define PIECE_WIDTH 4
+#define PIECE_HEIGHT 4
+
+static const uint8_t tetrominoes[PIECE_COUNT][PIECE_WIDTH * PIECE_HEIGHT] = {
+    {0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0}, // I
+    {0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0}, // O
+    {0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0}, // S
+    {0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0}, // Z
+    {0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0}, // T
+    {0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0}, // L
+    {0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 0}, // J
+};
 
 extern UART_HandleTypeDef huart1;
 
@@ -14,12 +29,15 @@ static bool has_active_piece;
 
 static void spawn_piece(void)
 {
-    const int piece_length = 4;
-    const int start_col = (GRID_WIDTH - piece_length) / 2;
+    const int piece = rand() % PIECE_COUNT;
+    const int start_col = (GRID_WIDTH - PIECE_WIDTH) / 2;
 
     memset(active_piece, 0, sizeof(active_piece));
-    for (int col = start_col; col < start_col + piece_length; ++col) {
-        active_piece[0][col] = 1;
+
+    for (int row = 0; row < PIECE_HEIGHT; ++row) {
+        for (int col = 0; col < PIECE_WIDTH; ++col) {
+            active_piece[row][start_col + col] = tetrominoes[piece][row * PIECE_WIDTH + col];
+        }
     }
 
     has_active_piece = true;
