@@ -19,6 +19,8 @@ typedef struct {
 int init_game_state(GameState *state);
 int update_game_state(GameState *state);
 int rotate_piece(GameState *state);
+/* Move one column: -1 for left, +1 for right. Blocked moves leave state unchanged. */
+int move_piece(GameState *state, int direction);
 /* Render an unchanged snapshot without holding the game-state mutex. */
 int draw_grid(const GameState *state);
 

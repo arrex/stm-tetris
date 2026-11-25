@@ -197,6 +197,39 @@ int rotate_piece(GameState *state)
     return 0;
 }
 
+int move_piece(GameState *state, int direction)
+{
+    if (state == NULL || (direction != -1 && direction != 1)) {
+        return -1;
+    }
+    if (state->game_over || !state->has_active_piece) {
+        return 0;
+    }
+
+    // Check every destination before moving any part of the piece.
+    for (int row = 0; row < GRID_HEIGHT; ++row) {
+        for (int col = 0; col < GRID_WIDTH; ++col) {
+            if (state->active_piece[row][col]) {
+                const int next_col = col + direction;
+                if (next_col < 0 || next_col >= GRID_WIDTH || state->board[row][next_col]) {
+                    return 0;
+                }
+            }
+        }
+    }
+
+    for (int row = 0; row < GRID_HEIGHT; ++row) {
+        if (direction == -1) {
+            memmove(state->active_piece[row], state->active_piece[row] + 1, GRID_WIDTH - 1);
+            state->active_piece[row][GRID_WIDTH - 1] = 0;
+        } else {
+            memmove(state->active_piece[row] + 1, state->active_piece[row], GRID_WIDTH - 1);
+            state->active_piece[row][0] = 0;
+        }
+    }
+    return 0;
+}
+
 int update_game_state(GameState *state)
 {
     if (state == NULL) {
