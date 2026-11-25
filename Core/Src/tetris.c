@@ -135,6 +135,62 @@ static void lock_piece(void)
     has_active_piece = false;
 }
 
+int rotate_piece(void)
+{
+    if (game_over || !has_active_piece) {
+        return 0;
+    }
+
+    // find the occupied rectangle -> keep top-left corner fixed
+    int top = GRID_HEIGHT, bottom = -1;
+    int left = GRID_WIDTH, right = -1;
+    for (int row = 0; row < GRID_HEIGHT; ++row) {
+        for (int col = 0; col < GRID_WIDTH; ++col) {
+            if (active_piece[row][col]) {
+                if (row < top) top = row;
+                if (row > bottom) bottom = row;
+                if (col < left) left = col;
+                if (col > right) right = col;
+            }
+        }
+    }
+
+    if (bottom < 0) {
+        return 0;
+    }
+
+    const int height = bottom - top + 1;
+    const int width = right - left + 1;
+
+    // rotation swaps the rectangle's width and height
+    if (top + width > GRID_HEIGHT || left + height > GRID_WIDTH) {
+        return 0;
+    }
+
+    uint8_t rotated[PIECE_HEIGHT][PIECE_WIDTH] = {0};
+    for (int row = 0; row < height; ++row) {
+        for (int col = 0; col < width; ++col) {
+            if (active_piece[top + row][left + col]) {
+                const int new_row = col;
+                const int new_col = height - 1 - row;
+                if (game_state[top + new_row][left + new_col]) {
+                    return 0;
+                }
+                rotated[new_row][new_col] = active_piece[top + row][left + col];
+            }
+        }
+    }
+
+    // commit only after every rotated cell passes the collision check
+    memset(active_piece, 0, sizeof(active_piece));
+    for (int row = 0; row < width; ++row) {
+        for (int col = 0; col < height; ++col) {
+            active_piece[top + row][left + col] = rotated[row][col];
+        }
+    }
+    return 0;
+}
+
 int update_game_state(void)
 {
     if (game_over) {

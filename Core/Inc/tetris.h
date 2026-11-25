@@ -8,6 +8,7 @@
 
 int init_game_state(void);
 int update_game_state(void);
+int rotate_piece(void);
 int draw_grid(void);
 
 #endif
