@@ -70,9 +70,10 @@ int init_game_state(GameState *state)
     return 0;
 }
 
-static void clear_lines(GameState *state)
+static int clear_lines(GameState *state)
 {
     int destination = GRID_HEIGHT - 1;
+    int cleared = 0;
 
     // only landed blocks are in game state -> any full row can clear
     for (int row = GRID_HEIGHT - 1; row >= 0; --row) {
@@ -89,6 +90,8 @@ static void clear_lines(GameState *state)
                 memcpy(state->board[destination], state->board[row], sizeof(state->board[row]));
             }
             --destination;
+        } else {
+            ++cleared;
         }
     }
 
@@ -97,6 +100,7 @@ static void clear_lines(GameState *state)
         memset(state->board[destination], 0, sizeof(state->board[destination]));
         --destination;
     }
+    return cleared;
 }
 
 static bool drop_blocks(GameState *state)
@@ -207,7 +211,7 @@ int update_game_state(GameState *state)
     // there is an active piece, BUT it cannot move down further
     if (state->has_active_piece && !drop_blocks(state)) {
         lock_piece(state);
-        clear_lines(state);
+        state->lines_cleared += clear_lines(state);
         spawn_piece(state);
     }
 

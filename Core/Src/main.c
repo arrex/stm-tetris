@@ -36,6 +36,8 @@
 /* USER CODE BEGIN PD */
 #define INPUT_ROTATE 1
 #define DRAW_READY 1
+#define AUDIO_LINE_CLEAR (1U << 0)
+#define AUDIO_GAME_OVER (1U << 1)
 
 /* USER CODE END PD */
 
@@ -156,7 +158,7 @@ int main(void)
   audioQueueHandle = osMessageCreate(osMessageQ(audioQueue), NULL);
 
   /* USER CODE BEGIN RTOS_QUEUES */
-  if (rotateQueueHandle == NULL) {
+  if (rotateQueueHandle == NULL || audioQueueHandle == NULL) {
     Error_Handler();
   }
   /* add queues, ... */
@@ -467,6 +469,7 @@ void StartGameStateTask(void const * argument)
   /* USER CODE BEGIN 5 */
   uint32_t last_update_ms = HAL_GetTick();
   uint8_t redraw = 1;
+  uint32_t pending_audio = 0;
 
   /* Infinite loop */
   for(;;)
@@ -493,14 +496,27 @@ void StartGameStateTask(void const * argument)
     uint32_t now = HAL_GetTick();
     if ((uint32_t)(now - last_update_ms) >= 1000U) {
       last_update_ms = now;
+      const uint32_t previous_lines = game_state.lines_cleared;
+      const bool was_game_over = game_state.game_over;
       if (update_game_state(&game_state) == -1) {
         Error_Handler();
+      }
+      if (game_state.lines_cleared != previous_lines) {
+        pending_audio |= AUDIO_LINE_CLEAR;
+      }
+      if (!was_game_over && game_state.game_over) {
+        pending_audio |= AUDIO_GAME_OVER;
       }
       redraw = 1;
     }
 
     if (osMutexRelease(gameStateMutexHandle) != osOK) {
       Error_Handler();
+    }
+
+    // Send outside the state mutex; retry next loop if the queue is full.
+    if (pending_audio && osMessagePut(audioQueueHandle, pending_audio, 0) == osOK) {
+      pending_audio = 0;
     }
 
     if (redraw) {
@@ -524,10 +540,18 @@ void StartGameStateTask(void const * argument)
 void StartPlayAudioTask(void const * argument)
 {
   /* USER CODE BEGIN StartPlayAudioTask */
-  /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    osEvent event = osMessageGet(audioQueueHandle, osWaitForever);
+    if (event.status != osEventMessage) {
+      Error_Handler();
+    }
+    if ((event.value.v & AUDIO_LINE_CLEAR) && play_tetris_chime() != 0) {
+      Error_Handler();
+    }
+    if ((event.value.v & AUDIO_GAME_OVER) && play_game_over_chime() != 0) {
+      Error_Handler();
+    }
   }
   /* USER CODE END StartPlayAudioTask */
 }
