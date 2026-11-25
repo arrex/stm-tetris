@@ -55,6 +55,7 @@ osThreadId gameStateTaskHandle;
 osThreadId playAudioTaskHandle;
 osThreadId drawGridTaskHandle;
 osMessageQId rotateQueueHandle;
+osMutexId gameStateMutexHandle;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -119,6 +120,11 @@ int main(void)
    }
 
   /* USER CODE END 2 */
+
+  /* Create the mutex(es) */
+  /* definition and creation of gameStateMutex */
+  osMutexDef(gameStateMutex);
+  gameStateMutexHandle = osMutexCreate(osMutex(gameStateMutex));
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
