@@ -23,12 +23,7 @@ static const uint8_t tetrominoes[PIECE_COUNT][PIECE_WIDTH * PIECE_HEIGHT] = {
 
 extern UART_HandleTypeDef huart1;
 
-static uint8_t game_state[GRID_HEIGHT][GRID_WIDTH];
-static uint8_t active_piece[GRID_HEIGHT][GRID_WIDTH];
-static bool has_active_piece;
-static bool game_over;
-
-static void spawn_piece(void)
+static void spawn_piece(GameState *state)
 {
     const int piece = rand() % PIECE_COUNT;
     const int start_col = (GRID_WIDTH - PIECE_WIDTH) / 2;
@@ -42,37 +37,40 @@ static void spawn_piece(void)
         }
     }
 
-    memset(active_piece, 0, sizeof(active_piece));
-    has_active_piece = false;
+    memset(state->active_piece, 0, sizeof(state->active_piece));
+    state->has_active_piece = false;
 
     for (int row = first_occupied_row; row < PIECE_HEIGHT; ++row) {
         const int board_row = row - first_occupied_row;
         for (int col = 0; col < PIECE_WIDTH; ++col) {
-            active_piece[board_row][start_col + col] = tetrominoes[piece][row * PIECE_WIDTH + col];
+            state->active_piece[board_row][start_col + col] = tetrominoes[piece][row * PIECE_WIDTH + col];
 
-            if (active_piece[board_row][start_col + col] && game_state[board_row][start_col + col]) {
+            if (state->active_piece[board_row][start_col + col] && state->board[board_row][start_col + col]) {
                 // discard the blocked spawn and preserve the landed board
-                memset(active_piece, 0, sizeof(active_piece));
-                game_over = true;
+                memset(state->active_piece, 0, sizeof(state->active_piece));
+                state->game_over = true;
 
                 return;
             }
         }
     }
 
-    has_active_piece = true;
+    state->has_active_piece = true;
 }
 
-int init_game_state(void)
+int init_game_state(GameState *state)
 {
-    memset(game_state, 0, sizeof(game_state));
-    game_over = false;
-    spawn_piece();
+    if (state == NULL) {
+        return -1;
+    }
+
+    memset(state, 0, sizeof(*state));
+    spawn_piece(state);
 
     return 0;
 }
 
-static void clear_lines(void)
+static void clear_lines(GameState *state)
 {
     int destination = GRID_HEIGHT - 1;
 
@@ -80,7 +78,7 @@ static void clear_lines(void)
     for (int row = GRID_HEIGHT - 1; row >= 0; --row) {
         int full = 1;
         for (int col = 0; col < GRID_WIDTH; ++col) {
-            if (!game_state[row][col]) {
+            if (!state->board[row][col]) {
                 full = 0;
                 break;
             }
@@ -88,7 +86,7 @@ static void clear_lines(void)
 
         if (!full) {
             if (destination != row) {
-                memcpy(game_state[destination], game_state[row], sizeof(game_state[row]));
+                memcpy(state->board[destination], state->board[row], sizeof(state->board[row]));
             }
             --destination;
         }
@@ -96,18 +94,18 @@ static void clear_lines(void)
 
     // replace the cleared rows with empty rows at the top.
     while (destination >= 0) {
-        memset(game_state[destination], 0, sizeof(game_state[destination]));
+        memset(state->board[destination], 0, sizeof(state->board[destination]));
         --destination;
     }
 }
 
-static bool drop_blocks(void)
+static bool drop_blocks(GameState *state)
 {
     // check the entire active piece before moving any of its cells
     for (int row = 0; row < GRID_HEIGHT; ++row) {
         for (int col = 0; col < GRID_WIDTH; ++col) {
-            if (active_piece[row][col]
-                && (row == GRID_HEIGHT - 1 || game_state[row + 1][col])) {
+            if (state->active_piece[row][col]
+                && (row == GRID_HEIGHT - 1 || state->board[row + 1][col])) {
                 return false;
             }
         }
@@ -115,29 +113,33 @@ static bool drop_blocks(void)
 
     // move active piece down one row
     for (int row = GRID_HEIGHT - 1; row > 0; --row) {
-        memcpy(active_piece[row], active_piece[row - 1], sizeof(active_piece[row]));
+        memcpy(state->active_piece[row], state->active_piece[row - 1], sizeof(state->active_piece[row]));
     }
 
-    memset(active_piece[0], 0, sizeof(active_piece[0]));
+    memset(state->active_piece[0], 0, sizeof(state->active_piece[0]));
     return true;
 }
 
-static void lock_piece(void)
+static void lock_piece(GameState *state)
 {
     for (int row = 0; row < GRID_HEIGHT; ++row) {
         for (int col = 0; col < GRID_WIDTH; ++col) {
-            if (active_piece[row][col]) {
-                game_state[row][col] = active_piece[row][col];
+            if (state->active_piece[row][col]) {
+                state->board[row][col] = state->active_piece[row][col];
             }
         }
     }
-    memset(active_piece, 0, sizeof(active_piece));
-    has_active_piece = false;
+    memset(state->active_piece, 0, sizeof(state->active_piece));
+    state->has_active_piece = false;
 }
 
-int rotate_piece(void)
+int rotate_piece(GameState *state)
 {
-    if (game_over || !has_active_piece) {
+    if (state == NULL) {
+        return -1;
+    }
+
+    if (state->game_over || !state->has_active_piece) {
         return 0;
     }
 
@@ -146,7 +148,7 @@ int rotate_piece(void)
     int left = GRID_WIDTH, right = -1;
     for (int row = 0; row < GRID_HEIGHT; ++row) {
         for (int col = 0; col < GRID_WIDTH; ++col) {
-            if (active_piece[row][col]) {
+            if (state->active_piece[row][col]) {
                 if (row < top) top = row;
                 if (row > bottom) bottom = row;
                 if (col < left) left = col;
@@ -170,55 +172,62 @@ int rotate_piece(void)
     uint8_t rotated[PIECE_HEIGHT][PIECE_WIDTH] = {0};
     for (int row = 0; row < height; ++row) {
         for (int col = 0; col < width; ++col) {
-            if (active_piece[top + row][left + col]) {
+            if (state->active_piece[top + row][left + col]) {
                 const int new_row = col;
                 const int new_col = height - 1 - row;
-                if (game_state[top + new_row][left + new_col]) {
+                if (state->board[top + new_row][left + new_col]) {
                     return 0;
                 }
-                rotated[new_row][new_col] = active_piece[top + row][left + col];
+                rotated[new_row][new_col] = state->active_piece[top + row][left + col];
             }
         }
     }
 
     // commit only after every rotated cell passes the collision check
-    memset(active_piece, 0, sizeof(active_piece));
+    memset(state->active_piece, 0, sizeof(state->active_piece));
     for (int row = 0; row < width; ++row) {
         for (int col = 0; col < height; ++col) {
-            active_piece[top + row][left + col] = rotated[row][col];
+            state->active_piece[top + row][left + col] = rotated[row][col];
         }
     }
     return 0;
 }
 
-int update_game_state(void)
+int update_game_state(GameState *state)
 {
-    if (game_over) {
+    if (state == NULL) {
+        return -1;
+    }
+
+    if (state->game_over) {
         // return special err code for game over
         return 99;
     }
 
     // there is an active piece, BUT it cannot move down further
-    if (has_active_piece && !drop_blocks()) {
-        lock_piece();
-        clear_lines();
-        spawn_piece();
+    if (state->has_active_piece && !drop_blocks(state)) {
+        lock_piece(state);
+        clear_lines(state);
+        spawn_piece(state);
     }
 
     return 0;
 }
 
-int draw_grid(void)
+int draw_grid(const GameState *state)
 {
-    static const uint8_t clear_screen[] = "\033[2J\033[H";
+    if (state == NULL) {
+        return -1;
+    }
 
+    static const uint8_t clear_screen[] = "\033[2J\033[H";
     static uint8_t frame[GRID_HEIGHT * ROW_LENGTH];
     uint16_t frame_pos = 0;
 
     for (int row = 0; row < GRID_HEIGHT; ++row) {
     	// populate each row
         for (int col = 0; col < GRID_WIDTH; ++col) {
-            frame[frame_pos++] = (game_state[row][col] || active_piece[row][col]) ? '#' : '.';
+            frame[frame_pos++] = (state->board[row][col] || state->active_piece[row][col]) ? '#' : '.';
         }
 
         // add newline chars
@@ -232,7 +241,7 @@ int draw_grid(void)
         return -1;
     }
 
-    if (game_over) {
+    if (state->game_over) {
         static const uint8_t message[] = "Game over!\r\n";
         if (HAL_UART_Transmit(&huart1, message, sizeof(message) - 1U, 100U) != HAL_OK) {
             return -1;
