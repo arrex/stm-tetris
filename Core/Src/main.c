@@ -51,6 +51,7 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart1;
 
 osThreadId defaultTaskHandle;
+osMessageQId rotateQueueHandle;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -125,6 +126,11 @@ int main(void)
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
+
+  /* Create the queue(s) */
+  /* definition and creation of rotateQueue */
+  osMessageQDef(rotateQueue, 8, uint32_t);
+  rotateQueueHandle = osMessageCreate(osMessageQ(rotateQueue), NULL);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
