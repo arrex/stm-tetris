@@ -2,6 +2,7 @@
 #include "main.h"
 #include "audio.h"
 #include "arm_math.h"
+#include "cmsis_os.h"
 
 extern DAC_HandleTypeDef hdac1;
 extern TIM_HandleTypeDef htim2;
@@ -78,7 +79,7 @@ static int play_note(const Note *note) {
     }
 
     if (status == HAL_OK) {
-	   HAL_Delay(note->duration_ms);
+	   osDelay(note->duration_ms);
    }
 
     // stop timer & dma reqs

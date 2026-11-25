@@ -55,6 +55,7 @@ osThreadId gameStateTaskHandle;
 osThreadId playAudioTaskHandle;
 osThreadId drawGridTaskHandle;
 osMessageQId rotateQueueHandle;
+osMessageQId audioQueueHandle;
 osMutexId gameStateMutexHandle;
 /* USER CODE BEGIN PV */
 
@@ -142,6 +143,10 @@ int main(void)
   /* definition and creation of rotateQueue */
   osMessageQDef(rotateQueue, 8, uint32_t);
   rotateQueueHandle = osMessageCreate(osMessageQ(rotateQueue), NULL);
+
+  /* definition and creation of audioQueue */
+  osMessageQDef(audioQueue, 8, uint32_t);
+  audioQueueHandle = osMessageCreate(osMessageQ(audioQueue), NULL);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   if (rotateQueueHandle == NULL) {
